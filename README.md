@@ -37,6 +37,8 @@ last one. Saves are atomic, so a kill during a write never corrupts history.
 Data is stored as JSON in `$TICK_FILE`, or `~/.tick.json` by default. Writes are
 atomic, so a crash leaves either the old file or the new one. While a timer
 is open it also keeps `<data file>.view.<pid>`, removed when it exits.
+`<data file>.lock` lets only one command write at a time, so commands run from
+several terminals at once never lose each other's changes.
 
 ## Glossary
 
@@ -46,7 +48,7 @@ is open it also keeps `<data file>.view.<pid>`, removed when it exits.
 - **Timer view**: the full-screen display opened by `tick start` in a terminal. It follows one session: if that session is stopped or replaced from another terminal, the view closes without stopping anything.
 - **Heartbeat**: a timer view's last sign of life, its process ID and time, written each second to its own file.
 - **Recovery**: when every view following the active session has died without stopping it, the session ends at the latest heartbeat. A session started without a view has no heartbeat and keeps running until `tick stop`.
-- **Switch**: `tick start` on a different project while one is active stops the active one first.
+- **Switch**: `tick start` on a different project while one is active stops and records the active one, then starts the new one, in a single save. Works from any terminal: an open timer for the old project closes itself within a second.
 - **Day**: a calendar day in your local time zone. Time that crosses midnight is split between the two days.
 - **Summary**: total time per project, sorted by name, plus a total for all projects.
 - **Report**: a summary for each day, oldest first, then a summary for all days. It counts the active session up to now, marked `(running)`, and rounds to the second.
