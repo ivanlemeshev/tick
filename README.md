@@ -1,5 +1,10 @@
 # tick
 
+[![Lint](https://github.com/ivanlemeshev/tick/actions/workflows/lint.yml/badge.svg)](https://github.com/ivanlemeshev/tick/actions/workflows/lint.yml)
+[![Test](https://github.com/ivanlemeshev/tick/actions/workflows/test.yml/badge.svg)](https://github.com/ivanlemeshev/tick/actions/workflows/test.yml)
+[![Build](https://github.com/ivanlemeshev/tick/actions/workflows/build.yml/badge.svg)](https://github.com/ivanlemeshev/tick/actions/workflows/build.yml)
+[![CodeQL](https://github.com/ivanlemeshev/tick/actions/workflows/codeql.yml/badge.svg)](https://github.com/ivanlemeshev/tick/actions/workflows/codeql.yml)
+
 A minimal command-line time tracker.
 
 ```
@@ -66,8 +71,9 @@ mise run lint   # golangci-lint, configured in .golangci.yml
 mise run build  # check that it builds, keeping no binary
 ```
 
-GitHub Actions runs the same three tasks on every push to `main` and every pull
-request, with tool versions taken from `mise.toml`.
+GitHub Actions runs each of these tasks as its own workflow on every push to
+`main` and every pull request, with tool versions taken from `mise.toml`. CodeQL
+also scans the code for security issues on each push, pull request and weekly.
 
 ## License
 
