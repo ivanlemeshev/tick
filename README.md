@@ -55,6 +55,17 @@ several terminals at once never lose each other's changes.
 
 Running `start` on the project already active, or `stop` when nothing is active, changes nothing.
 
+## Development
+
+[mise](https://mise.jdx.dev) pins the Go toolchain and runs the tasks:
+
+```
+mise install    # install the pinned Go version
+mise run test   # all tests with the race detector, then coverage per function
+```
+
+The coverage profile is written to `coverage.out`.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
