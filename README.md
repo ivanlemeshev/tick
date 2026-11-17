@@ -61,10 +61,8 @@ Running `start` on the project already active, or `stop` when nothing is active,
 
 ```
 mise install    # install the pinned Go version
-mise run test   # all tests with the race detector, then coverage per function
+mise run test   # all tests with the race detector, printing total coverage
 ```
-
-The coverage profile is written to `coverage.out`.
 
 ## License
 

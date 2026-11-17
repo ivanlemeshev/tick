@@ -5,7 +5,4 @@ go = "1.27.3" # keep in sync with the go directive in go.mod
 
 [tasks.test]
 description = "Run all tests with the race detector and print coverage"
-run = [
-  "go test -race -coverprofile=coverage.out ./...",
-  "go tool cover -func=coverage.out",
-]
+run = "go test -race -cover ./..."
