@@ -15,3 +15,8 @@ formatters:
   enable:
     - gofmt
     - goimports
+
+issues:
+  # Show every issue: by default only 50 per linter and 3 identical ones are shown.
+  max-issues-per-linter: 0
+  max-same-issues: 0
