@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -16,26 +17,43 @@ type screen struct {
 	Size func() (width, height int)
 }
 
-// watch shows session a full screen until the user quits or a stops elsewhere.
-// q or Ctrl+C stops a, if it is still active, and returns the finished entry.
-// Each tick redraws and rereads the data file. Closed keys leave a running.
-func watch(path string, a Active, keys <-chan byte, ticks <-chan time.Time, now func() time.Time, scr screen) (*Entry, error) {
+// timerView is everything the full-screen view reads from and writes to.
+type timerView struct {
+	path    string // data file
+	session Active // the session the view follows
+	pid     int    // process running the view
+	keys    <-chan byte
+	ticks   <-chan time.Time
+	quit    <-chan os.Signal
+	now     func() time.Time
+	screen  screen
+}
+
+// watch shows v.session full screen until the user quits or it stops elsewhere.
+// q, Ctrl+C, closed input or a signal on quit stops the session, if it is
+// still active, and returns the finished entry. Each tick redraws, records a
+// heartbeat and rereads the data file.
+func watch(v timerView) (*Entry, error) {
+	a, scr := v.session, v.screen
+	defer os.Remove(heartbeatPath(v.path, v.pid))
 	for {
+		if err := writeHeartbeat(v.path, Heartbeat{Session: a, PID: v.pid, Seen: v.now()}); err != nil {
+			return nil, err
+		}
 		w, h := 80, 24
 		if scr.Size != nil {
 			w, h = scr.Size()
 		}
-		fmt.Fprint(scr, frame(a.Project, now().Sub(a.Start), w, h))
+		fmt.Fprint(scr, frame(a.Project, v.now().Sub(a.Start), w, h))
 		select {
-		case k, ok := <-keys:
-			if !ok {
-				return nil, nil
+		case k, ok := <-v.keys:
+			if !ok || k == 'q' || k == ctrlC {
+				return stopSession(v.path, a, v.now())
 			}
-			if k == 'q' || k == ctrlC {
-				return stopSession(path, a, now())
-			}
-		case <-ticks:
-			s, err := load(path)
+		case <-v.quit:
+			return stopSession(v.path, a, v.now())
+		case <-v.ticks:
+			s, err := readState(v.path) // as stored: this view knows it is alive
 			if err != nil || s.Active == nil || !s.Active.Is(a) {
 				return nil, err
 			}

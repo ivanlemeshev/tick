@@ -62,6 +62,42 @@ func StopSession(s State, a Active, now time.Time) (State, *Entry) {
 	return Stop(s, now)
 }
 
+// Heartbeat is what a running timer view last reported about itself.
+type Heartbeat struct {
+	Session Active    `json:"session"`
+	PID     int       `json:"pid"`
+	Seen    time.Time `json:"seen"`
+	Alive   bool      `json:"-"` // whether process PID still exists, checked on read
+}
+
+// Recover stops the active session at its views' last heartbeat when every
+// view following it has died without stopping it, for example by kill -9.
+// A session with no view, or with a live one, keeps running.
+func Recover(s State, hbs []Heartbeat) State {
+	if s.Active == nil {
+		return s
+	}
+	var last time.Time
+	followed := false
+	for _, hb := range hbs {
+		if !hb.Session.Is(*s.Active) {
+			continue
+		}
+		if hb.Alive {
+			return s
+		}
+		followed = true
+		if hb.Seen.After(last) {
+			last = hb.Seen
+		}
+	}
+	if !followed {
+		return s
+	}
+	next, _ := Stop(s, last)
+	return next
+}
+
 // Start begins tracking p, stopping any other active project first.
 // Starting the project already being tracked changes nothing.
 func Start(s State, p Project, now time.Time) (next State, stopped *Entry, started bool) {

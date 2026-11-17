@@ -3,6 +3,8 @@ package main
 import (
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"golang.org/x/term"
@@ -36,6 +38,9 @@ func fullScreen(path string, a Active, in, stdout int) (*Entry, error) {
 	go readKeys(os.Stdin, keys)
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
+	defer signal.Stop(quit)
 	size := func() (int, int) {
 		w, h, err := term.GetSize(stdout)
 		if err != nil {
@@ -43,7 +48,10 @@ func fullScreen(path string, a Active, in, stdout int) (*Entry, error) {
 		}
 		return w, h
 	}
-	return watch(path, a, keys, ticker.C, time.Now, screen{os.Stdout, size})
+	return watch(timerView{
+		path: path, session: a, pid: os.Getpid(),
+		keys: keys, ticks: ticker.C, quit: quit, now: time.Now, screen: screen{os.Stdout, size},
+	})
 }
 
 func readKeys(r io.Reader, keys chan<- byte) {

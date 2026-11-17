@@ -2,7 +2,11 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -11,6 +15,7 @@ import (
 type watcher struct {
 	keys  chan byte
 	ticks chan time.Time
+	quit  chan os.Signal
 	out   bytes.Buffer
 	done  chan watchResult
 }
@@ -29,14 +34,36 @@ func (s *session) active() Active {
 	return *st.Active
 }
 
-func (s *session) watch() *watcher {
-	w := &watcher{keys: make(chan byte), ticks: make(chan time.Time), done: make(chan watchResult)}
-	a := s.active()
+func (s *session) watch() *watcher { return s.watchAs(os.Getpid()) }
+
+// watchAs runs the view as if it were process pid.
+func (s *session) watchAs(pid int) *watcher {
+	w := &watcher{keys: make(chan byte), ticks: make(chan time.Time), quit: make(chan os.Signal), done: make(chan watchResult)}
+	v := timerView{
+		path: s.path, session: s.active(), pid: pid,
+		keys: w.keys, ticks: w.ticks, quit: w.quit,
+		now: s.clock, screen: screen{Writer: &w.out},
+	}
 	go func() {
-		e, err := watch(s.path, a, w.keys, w.ticks, s.clock, screen{Writer: &w.out})
+		e, err := watch(v)
 		w.done <- watchResult{e, err}
 	}()
 	return w
+}
+
+// tick delivers one timer tick and waits until the view has handled it.
+func (w *watcher) tick(now time.Time) {
+	w.ticks <- now
+	w.keys <- 'x' // ignored; received only once the tick is fully handled
+}
+
+// deadPID returns the ID of a process that has already exited.
+func deadPID(t *testing.T) int {
+	cmd := exec.Command("true")
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
+	return cmd.Process.Pid
 }
 
 func (w *watcher) result(t *testing.T) watchResult {
@@ -118,15 +145,87 @@ All days  2m0s
 `)
 }
 
-func TestWatchLeavesSessionRunningWhenInputCloses(t *testing.T) {
+func TestWatchStopsWhenInputCloses(t *testing.T) {
+	s := newSession(t)
+	s.ok("start", "alpha")
+	s.wait(time.Minute)
+	w := s.watch()
+	close(w.keys) // the terminal went away
+	if r := w.result(t); r.err != nil || r.stopped == nil {
+		t.Fatalf("watch result = %+v", r)
+	}
+	if out := s.ok("stop"); out != "nothing to stop\n" {
+		t.Fatalf("session still running: %q", out)
+	}
+}
+
+func TestWatchStopsAndSavesOnSignal(t *testing.T) {
+	for _, sig := range []os.Signal{syscall.SIGTERM, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT} {
+		s := newSession(t)
+		s.ok("start", "alpha")
+		s.wait(time.Minute)
+		w := s.watch()
+		w.quit <- sig
+		if r := w.result(t); r.err != nil || r.stopped == nil {
+			t.Fatalf("%v: watch result = %+v", sig, r)
+		}
+		s.wantReport(`
+2026-11-17  1m0s
+  alpha  1m0s
+
+All days  1m0s
+  alpha  1m0s
+`)
+	}
+}
+
+func TestKilledViewIsStoppedAtItsLastHeartbeat(t *testing.T) {
+	s := newSession(t)
+	s.ok("start", "alpha")
+	w := s.watchAs(deadPID(t)) // the view will "die" without running any cleanup
+	s.wait(2 * time.Minute)
+	w.tick(s.clock())
+	s.wait(10 * time.Minute) // no heartbeats: the view was killed
+	s.wantReport(`
+2026-11-17  2m0s
+  alpha  2m0s
+
+All days  2m0s
+  alpha  2m0s
+`)
+	if out := s.ok("stop"); out != "nothing to stop\n" {
+		t.Fatalf("stop after recovery = %q", out)
+	}
+	if files, _ := filepath.Glob(filepath.Join(filepath.Dir(s.path), "*")); len(files) != 1 {
+		t.Fatalf("leftover files after recovery: %v", files)
+	}
+	w.quit <- syscall.SIGTERM // let the abandoned goroutine finish; nothing to stop
+	if r := w.result(t); r.stopped != nil {
+		t.Fatalf("abandoned view stopped something: %+v", r)
+	}
+}
+
+func TestLiveViewKeepsSessionRunning(t *testing.T) {
 	s := newSession(t)
 	s.ok("start", "alpha")
 	w := s.watch()
-	close(w.keys)
-	if r := w.result(t); r.err != nil || r.stopped != nil {
+	s.wait(2 * time.Minute)
+	w.tick(s.clock())
+	s.wait(10 * time.Minute)
+	s.wantReport(`
+2026-11-17  12m0s
+  alpha  12m0s (running)
+
+All days  12m0s
+  alpha  12m0s (running)
+`)
+	w.keys <- 'q'
+	if r := w.result(t); r.stopped == nil {
 		t.Fatalf("watch result = %+v", r)
 	}
-	s.active()
+	if files, _ := filepath.Glob(filepath.Join(filepath.Dir(s.path), "*")); len(files) != 1 {
+		t.Fatalf("view left files behind: %v", files)
+	}
 }
 
 func TestStartFollowsTheActiveSession(t *testing.T) {
@@ -150,7 +249,8 @@ func TestWatchCentersTextOnTheScreen(t *testing.T) {
 	keys := make(chan byte, 1)
 	keys <- 'q'
 	scr := screen{Writer: &out, Size: func() (int, int) { return 40, 9 }}
-	if _, err := watch(s.path, a, keys, nil, s.clock, scr); err != nil {
+	v := timerView{path: s.path, session: a, pid: os.Getpid(), keys: keys, now: s.clock, screen: scr}
+	if _, err := watch(v); err != nil {
 		t.Fatal(err)
 	}
 	// 3 lines on 9 rows start at row 4; "alpha" is 5 wide on 40 columns, "00:00:00" is 8.

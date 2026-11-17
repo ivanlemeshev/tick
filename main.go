@@ -73,16 +73,6 @@ func run(args []string, path string, now func() time.Time, out io.Writer, follow
 	return errUsage
 }
 
-// update loads state, applies f, and saves and returns the result.
-func update(path string, f func(State) State) (State, error) {
-	s, err := load(path)
-	if err != nil {
-		return s, err
-	}
-	next := f(s)
-	return next, save(path, next)
-}
-
 func start(s State, p Project, now time.Time, out io.Writer) State {
 	next, stopped, started := Start(s, p, now)
 	printStopped(out, stopped)
