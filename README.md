@@ -52,3 +52,7 @@ is open it also keeps `<data file>.view.<pid>`, removed when it exits.
 - **Report**: a summary for each day, oldest first, then a summary for all days. It counts the active session up to now, marked `(running)`, and rounds to the second.
 
 Running `start` on the project already active, or `stop` when nothing is active, changes nothing.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
