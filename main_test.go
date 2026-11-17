@@ -41,6 +41,15 @@ func (s *session) ok(args ...string) string {
 
 func (s *session) wait(d time.Duration) { s.now = s.now.Add(d) }
 
+// wantReport checks tick report output; want starts with a newline for readability.
+func (s *session) wantReport(want string) {
+	s.t.Helper()
+	want = strings.TrimPrefix(want, "\n")
+	if out := s.ok("report"); out != want {
+		s.t.Fatalf("report output:\n%s\nwant:\n%s", out, want)
+	}
+}
+
 func TestStartStopReport(t *testing.T) {
 	s := newSession(t)
 	if out := s.ok("start", "alpha"); out != "started alpha\n" {
@@ -51,9 +60,13 @@ func TestStartStopReport(t *testing.T) {
 		t.Fatalf("stop output = %q", out)
 	}
 	s.wait(time.Hour)
-	if out := s.ok("report"); out != "alpha  1h30m0s\n" {
-		t.Fatalf("report output = %q", out)
-	}
+	s.wantReport(`
+2026-11-17  1h30m0s
+  alpha  1h30m0s
+
+All days  1h30m0s
+  alpha  1h30m0s
+`)
 }
 
 func TestReportSumsPerProjectSortedAndIncludesRunning(t *testing.T) {
@@ -67,10 +80,15 @@ func TestReportSumsPerProjectSortedAndIncludesRunning(t *testing.T) {
 	s.ok("start", "beta")
 	s.wait(5 * time.Minute)
 
-	want := "alpha  20m0s\nbeta   15m0s (running)\n"
-	if out := s.ok("report"); out != want {
-		t.Fatalf("report output =\n%q\nwant\n%q", out, want)
-	}
+	s.wantReport(`
+2026-11-17  35m0s
+  alpha  20m0s
+  beta   15m0s (running)
+
+All days  35m0s
+  alpha  20m0s
+  beta   15m0s (running)
+`)
 }
 
 func TestStartingAnotherProjectSwitches(t *testing.T) {
@@ -81,10 +99,15 @@ func TestStartingAnotherProjectSwitches(t *testing.T) {
 		t.Fatalf("switch output = %q", out)
 	}
 	s.wait(2 * time.Minute)
-	want := "alpha  1m0s\nbeta   2m0s (running)\n"
-	if out := s.ok("report"); out != want {
-		t.Fatalf("report output = %q, want %q", out, want)
-	}
+	s.wantReport(`
+2026-11-17  3m0s
+  alpha  1m0s
+  beta   2m0s (running)
+
+All days  3m0s
+  alpha  1m0s
+  beta   2m0s (running)
+`)
 }
 
 func TestStartIsIdempotent(t *testing.T) {
@@ -95,9 +118,13 @@ func TestStartIsIdempotent(t *testing.T) {
 		t.Fatalf("second start output = %q", out)
 	}
 	s.wait(time.Minute)
-	if out := s.ok("report"); out != "alpha  2m0s (running)\n" {
-		t.Fatalf("report output = %q", out)
-	}
+	s.wantReport(`
+2026-11-17  2m0s
+  alpha  2m0s (running)
+
+All days  2m0s
+  alpha  2m0s (running)
+`)
 }
 
 func TestStopWhenIdleIsIdempotent(t *testing.T) {
@@ -146,9 +173,13 @@ func TestFirstStartCreatesDataDirectory(t *testing.T) {
 	s.path = filepath.Join(t.TempDir(), "missing-dir", "tick.json")
 	s.ok("start", "alpha")
 	s.wait(time.Minute)
-	if out := s.ok("report"); out != "alpha  1m0s (running)\n" {
-		t.Fatalf("report output = %q", out)
-	}
+	s.wantReport(`
+2026-11-17  1m0s
+  alpha  1m0s (running)
+
+All days  1m0s
+  alpha  1m0s (running)
+`)
 }
 
 func TestUnwritablePathIsReported(t *testing.T) {
@@ -178,10 +209,109 @@ func TestDurationsAreShownToTheSecond(t *testing.T) {
 	s := newSession(t)
 	s.ok("start", "alpha")
 	s.wait(90*time.Second + 400*time.Millisecond)
-	if out := s.ok("report"); out != "alpha  1m30s (running)\n" {
-		t.Fatalf("report output = %q", out)
-	}
+	s.wantReport(`
+2026-11-17  1m30s
+  alpha  1m30s (running)
+
+All days  1m30s
+  alpha  1m30s (running)
+`)
 	if out := s.ok("stop"); out != "stopped alpha after 1m30s\n" {
 		t.Fatalf("stop output = %q", out)
 	}
+}
+
+func TestReportSplitsTimeAtMidnight(t *testing.T) {
+	s := newSession(t)
+	s.wait(14*time.Hour + 30*time.Minute) // 23:30
+	s.ok("start", "alpha")
+	s.wait(75 * time.Minute) // 00:45 next day
+	s.ok("stop")
+	s.wantReport(`
+2026-11-17  30m0s
+  alpha  30m0s
+
+2026-11-18  45m0s
+  alpha  45m0s
+
+All days  1h15m0s
+  alpha  1h15m0s
+`)
+}
+
+func TestReportShowsEachDayOldestFirstAndRunningOnlyToday(t *testing.T) {
+	s := newSession(t)
+	s.ok("start", "beta")
+	s.wait(time.Hour)
+	s.ok("start", "alpha")
+	s.wait(30 * time.Minute)
+	s.ok("stop")
+	s.wait(24 * time.Hour)
+	s.ok("start", "beta")
+	s.wait(10 * time.Minute)
+	s.wantReport(`
+2026-11-17  1h30m0s
+  alpha  30m0s
+  beta   1h0m0s
+
+2026-11-18  10m0s
+  beta  10m0s (running)
+
+All days  1h40m0s
+  alpha  30m0s
+  beta   1h10m0s (running)
+`)
+}
+
+func TestReportUsesTheClockTimeZoneForDays(t *testing.T) {
+	s := newSession(t)
+	s.ok("start", "alpha") // 09:00 UTC is 22:00 in UTC-11
+	s.wait(3 * time.Hour)
+	s.ok("stop")
+	s.now = s.now.In(time.FixedZone("UTC-11", -11*60*60))
+	s.wantReport(`
+2026-11-16  2h0m0s
+  alpha  2h0m0s
+
+2026-11-17  1h0m0s
+  alpha  1h0m0s
+
+All days  3h0m0s
+  alpha  3h0m0s
+`)
+}
+
+func TestReportRightAfterStartShowsRunningProject(t *testing.T) {
+	s := newSession(t)
+	s.ok("start", "alpha")
+	s.wantReport(`
+2026-11-17  0s
+  alpha  0s (running)
+
+All days  0s
+  alpha  0s (running)
+`)
+}
+
+func TestReportOrdersDaysEvenAfterClockMovesBack(t *testing.T) {
+	s := newSession(t)
+	s.wait(24 * time.Hour)
+	s.ok("start", "alpha")
+	s.wait(time.Hour)
+	s.ok("stop")
+	s.wait(-48 * time.Hour) // system clock corrected backward
+	s.ok("start", "beta")
+	s.wait(time.Hour)
+	s.ok("stop")
+	s.wantReport(`
+2026-11-16  1h0m0s
+  beta  1h0m0s
+
+2026-11-18  1h0m0s
+  alpha  1h0m0s
+
+All days  2h0m0s
+  alpha  1h0m0s
+  beta   1h0m0s
+`)
 }

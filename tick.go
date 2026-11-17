@@ -60,25 +60,97 @@ func Start(s State, p Project, now time.Time) (next State, stopped *Entry, start
 	return next, stopped, true
 }
 
-// Line is one project's total in a report.
+// Line is one project's total within a summary.
 type Line struct {
 	Project Project
 	Total   time.Duration
 	Running bool
 }
 
-// Report totals time per project, counting the active session up to now.
-func Report(s State, now time.Time) []Line {
+// Summary totals time per project, sorted by project name.
+type Summary struct {
+	Lines []Line
+	Total time.Duration
+}
+
+// Day is the summary of one calendar day.
+type Day struct {
+	Date time.Time // local midnight
+	Summary
+}
+
+// Report is the summary of each day, oldest first, and of all days together.
+type Report struct {
+	Days []Day
+	All  Summary
+}
+
+// piece is the part of an entry that falls within one calendar day.
+type piece struct {
+	project Project
+	day     time.Time
+	length  time.Duration
+	running bool
+}
+
+// BuildReport summarizes tracked time, counting the active session up to now.
+// Days start at midnight in now's time zone.
+func BuildReport(s State, now time.Time) Report {
 	finished, _ := Stop(s, now)
-	totals := map[Project]time.Duration{}
-	for _, e := range finished.Entries {
-		totals[e.Project] += e.End.Sub(e.Start)
+	var pieces []piece
+	for i, e := range finished.Entries {
+		ps := split(e, now.Location())
+		if s.Active != nil && i == len(finished.Entries)-1 {
+			ps[len(ps)-1].running = true
+		}
+		pieces = append(pieces, ps...)
 	}
-	lines := make([]Line, 0, len(totals))
-	for p, d := range totals {
-		running := s.Active != nil && s.Active.Project == p
-		lines = append(lines, Line{Project: p, Total: d, Running: running})
+	slices.SortStableFunc(pieces, func(a, b piece) int { return a.day.Compare(b.day) })
+
+	var r Report
+	for rest := pieces; len(rest) > 0; {
+		n := 1
+		for n < len(rest) && rest[n].day.Equal(rest[0].day) {
+			n++
+		}
+		r.Days = append(r.Days, Day{Date: rest[0].day, Summary: summarize(rest[:n])})
+		rest = rest[n:]
 	}
-	slices.SortFunc(lines, func(a, b Line) int { return strings.Compare(string(a.Project), string(b.Project)) })
-	return lines
+	r.All = summarize(pieces)
+	return r
+}
+
+// split cuts an entry at each local midnight it crosses.
+// It always returns at least one piece, so a zero-length entry still shows.
+func split(e Entry, loc *time.Location) []piece {
+	var ps []piece
+	from, end := e.Start.In(loc), e.End.In(loc)
+	for {
+		y, m, d := from.Date()
+		day := time.Date(y, m, d, 0, 0, 0, 0, loc)
+		to := time.Date(y, m, d+1, 0, 0, 0, 0, loc)
+		if !to.Before(end) {
+			return append(ps, piece{project: e.Project, day: day, length: end.Sub(from)})
+		}
+		ps = append(ps, piece{project: e.Project, day: day, length: to.Sub(from)})
+		from = to
+	}
+}
+
+func summarize(pieces []piece) Summary {
+	var sum Summary
+	index := map[Project]int{}
+	for _, p := range pieces {
+		i, ok := index[p.project]
+		if !ok {
+			i = len(sum.Lines)
+			index[p.project] = i
+			sum.Lines = append(sum.Lines, Line{Project: p.project})
+		}
+		sum.Lines[i].Total += p.length
+		sum.Lines[i].Running = sum.Lines[i].Running || p.running
+		sum.Total += p.length
+	}
+	slices.SortFunc(sum.Lines, func(a, b Line) int { return strings.Compare(string(a.Project), string(b.Project)) })
+	return sum
 }

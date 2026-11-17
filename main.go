@@ -103,20 +103,29 @@ func printStopped(out io.Writer, e *Entry) {
 }
 
 func report(s State, now time.Time, out io.Writer) error {
-	lines := Report(s, now)
-	if len(lines) == 0 {
+	r := BuildReport(s, now)
+	if len(r.Days) == 0 {
 		_, err := fmt.Fprintln(out, "no time tracked")
 		return err
 	}
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	for _, l := range lines {
+	for _, d := range r.Days {
+		writeSummary(w, d.Date.Format(time.DateOnly), d.Summary)
+		fmt.Fprintln(w)
+	}
+	writeSummary(w, "All days", r.All)
+	return w.Flush()
+}
+
+func writeSummary(w io.Writer, title string, s Summary) {
+	fmt.Fprintf(w, "%s  %s\n", title, human(s.Total))
+	for _, l := range s.Lines {
 		suffix := ""
 		if l.Running {
 			suffix = " (running)"
 		}
-		fmt.Fprintf(w, "%s\t%s%s\n", l.Project, human(l.Total), suffix)
+		fmt.Fprintf(w, "  %s\t%s%s\n", l.Project, human(l.Total), suffix)
 	}
-	return w.Flush()
 }
 
 // human formats a duration for display, to the second.
