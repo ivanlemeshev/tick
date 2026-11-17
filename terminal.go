@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"os"
 	"os/signal"
@@ -19,20 +20,21 @@ func terminalFollower(path string, out io.Writer) func(Active) error {
 	}
 	return func(a Active) error {
 		e, err := fullScreen(path, a, in, stdout)
-		printStopped(out, e)
-		return err
+		return errors.Join(err, write(out, stoppedMsg(e)))
 	}
 }
 
 // fullScreen runs watch in the alternate screen with raw input, restoring both on return.
-func fullScreen(path string, a Active, in, stdout int) (*Entry, error) {
+func fullScreen(path string, a Active, in, stdout int) (stopped *Entry, err error) {
 	old, err := term.MakeRaw(in)
 	if err != nil {
 		return nil, err
 	}
-	defer term.Restore(in, old)
-	os.Stdout.WriteString("\x1b[?1049h\x1b[?25l") // alternate screen, hide cursor
-	defer os.Stdout.WriteString("\x1b[?25h\x1b[?1049l")
+	defer func() { err = errors.Join(err, term.Restore(in, old)) }()
+	if err := write(os.Stdout, "\x1b[?1049h\x1b[?25l"); err != nil { // alternate screen, hide cursor
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, write(os.Stdout, "\x1b[?25h\x1b[?1049l")) }()
 
 	keys := make(chan byte)
 	go readKeys(os.Stdin, keys)

@@ -13,8 +13,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"text/tabwriter"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const usage = "usage: tick start <project> | tick stop | tick report"
@@ -55,73 +56,87 @@ func run(args []string, path string, now func() time.Time, out io.Writer, follow
 		if err != nil {
 			return fmt.Errorf("%w\n%s", err, usage)
 		}
-		next, err := update(path, func(s State) State { return start(s, p, now(), out) })
-		if err != nil || follow == nil {
+		var msg string
+		next, err := update(path, func(s State) (n State) { n, msg = start(s, p, now()); return n })
+		if err != nil {
+			return err
+		}
+		if err := write(out, msg); err != nil || follow == nil {
 			return err
 		}
 		return follow(*next.Active)
 	case cmd == "stop" && len(rest) == 0:
-		_, err := update(path, func(s State) State { return stop(s, now(), out) })
-		return err
+		var msg string
+		if _, err := update(path, func(s State) (n State) { n, msg = stop(s, now()); return n }); err != nil {
+			return err
+		}
+		return write(out, msg)
 	case cmd == "report" && len(rest) == 0:
 		s, err := load(path)
 		if err != nil {
 			return err
 		}
-		return report(s, now(), out)
+		return write(out, report(s, now()))
 	}
 	return errUsage
 }
 
-func start(s State, p Project, now time.Time, out io.Writer) State {
-	next, stopped, started := Start(s, p, now)
-	printStopped(out, stopped)
-	if started {
-		fmt.Fprintf(out, "started %s\n", p)
-	} else {
-		fmt.Fprintf(out, "already tracking %s\n", p)
-	}
-	return next
+// write is the one place command output reaches the user.
+func write(out io.Writer, msg string) error {
+	_, err := io.WriteString(out, msg)
+	return err
 }
 
-func stop(s State, now time.Time, out io.Writer) State {
+func start(s State, p Project, now time.Time) (State, string) {
+	next, stopped, started := Start(s, p, now)
+	if started {
+		return next, stoppedMsg(stopped) + fmt.Sprintf("started %s\n", p)
+	}
+	return next, fmt.Sprintf("already tracking %s\n", p)
+}
+
+func stop(s State, now time.Time) (State, string) {
 	next, stopped := Stop(s, now)
 	if stopped == nil {
-		fmt.Fprintln(out, "nothing to stop")
+		return next, "nothing to stop\n"
 	}
-	printStopped(out, stopped)
-	return next
+	return next, stoppedMsg(stopped)
 }
 
-func printStopped(out io.Writer, e *Entry) {
-	if e != nil {
-		fmt.Fprintf(out, "stopped %s after %s\n", e.Project, human(e.End.Sub(e.Start)))
+func stoppedMsg(e *Entry) string {
+	if e == nil {
+		return ""
 	}
+	return fmt.Sprintf("stopped %s after %s\n", e.Project, human(e.End.Sub(e.Start)))
 }
 
-func report(s State, now time.Time, out io.Writer) error {
+func report(s State, now time.Time) string {
 	r := BuildReport(s, now)
 	if len(r.Days) == 0 {
-		_, err := fmt.Fprintln(out, "no time tracked")
-		return err
+		return "no time tracked\n"
 	}
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	var b strings.Builder
 	for _, d := range r.Days {
-		writeSummary(w, d.Date.Format(time.DateOnly), d.Summary)
-		fmt.Fprintln(w)
+		writeSummary(&b, d.Date.Format(time.DateOnly), d.Summary)
+		b.WriteString("\n")
 	}
-	writeSummary(w, "All days", r.All)
-	return w.Flush()
+	writeSummary(&b, "All days", r.All)
+	return b.String()
 }
 
-func writeSummary(w io.Writer, title string, s Summary) {
-	fmt.Fprintf(w, "%s  %s\n", title, human(s.Total))
+// writeSummary writes a title with the total, then one aligned line per project.
+func writeSummary(b *strings.Builder, title string, s Summary) {
+	fmt.Fprintf(b, "%s  %s\n", title, human(s.Total))
+	width := 0
+	for _, l := range s.Lines {
+		width = max(width, utf8.RuneCountInString(string(l.Project)))
+	}
 	for _, l := range s.Lines {
 		suffix := ""
 		if l.Running {
 			suffix = " (running)"
 		}
-		fmt.Fprintf(w, "  %s\t%s%s\n", l.Project, human(l.Total), suffix)
+		fmt.Fprintf(b, "  %-*s  %s%s\n", width, l.Project, human(l.Total), suffix)
 	}
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -206,8 +207,8 @@ All days  2m0s
 		t.Fatalf("heartbeats left after recovery: %v", files)
 	}
 	w.quit <- syscall.SIGTERM // let the abandoned goroutine finish; nothing to stop
-	if r := w.result(t); r.stopped != nil {
-		t.Fatalf("abandoned view stopped something: %+v", r)
+	if r := w.result(t); r.stopped != nil || r.err != nil {
+		t.Fatalf("abandoned view: want nothing stopped and no error, got %+v", r)
 	}
 }
 
@@ -291,4 +292,22 @@ func TestWatchExitsWhenSameProjectIsRestartedElsewhere(t *testing.T) {
 		t.Fatalf("watch result = %+v", r)
 	}
 	s.active() // the new session is still running
+}
+
+type brokenScreen struct{}
+
+func (brokenScreen) Write([]byte) (int, error) { return 0, errors.New("terminal gone") }
+
+func TestWatchStopsAndSavesWhenTheScreenBreaks(t *testing.T) {
+	s := newSession(t)
+	s.ok("start", "alpha")
+	s.wait(time.Minute)
+	v := timerView{path: s.path, session: s.active(), pid: os.Getpid(), now: s.clock, screen: screen{Writer: brokenScreen{}}}
+	e, err := watch(v) // no keys or ticks: only the failed draw can end it
+	if err == nil || e == nil {
+		t.Fatalf("watch = %+v, %v; want stopped entry and the draw error", e, err)
+	}
+	if out := s.ok("stop"); out != "nothing to stop\n" {
+		t.Fatalf("session still running: %q", out)
+	}
 }

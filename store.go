@@ -36,12 +36,12 @@ func loadWithHeartbeats(path string) (State, map[string]Heartbeat, error) {
 // It holds the write lock throughout, so concurrent updates never lose
 // each other's changes. Heartbeats of dead views are removed once the
 // recovered state is saved.
-func update(path string, f func(State) State) (State, error) {
+func update(path string, f func(State) State) (_ State, err error) {
 	unlock, err := lockForWrite(path)
 	if err != nil {
 		return State{}, err
 	}
-	defer unlock()
+	defer func() { err = errors.Join(err, unlock()) }()
 	s, hbs, err := loadWithHeartbeats(path)
 	if err != nil {
 		return s, err
@@ -52,7 +52,9 @@ func update(path string, f func(State) State) (State, error) {
 	}
 	for file, hb := range hbs {
 		if !hb.Alive {
-			os.Remove(file)
+			// Best effort: a dead heartbeat left behind is harmless, because
+			// Recover ignores heartbeats of sessions that are no longer active.
+			_ = os.Remove(file)
 		}
 	}
 	return next, nil
@@ -61,7 +63,7 @@ func update(path string, f func(State) State) (State, error) {
 // lockForWrite blocks until this process is the only writer of path.
 // The lock lives on a separate file because save replaces path itself.
 // The OS releases it if the process dies.
-func lockForWrite(path string) (unlock func(), err error) {
+func lockForWrite(path string) (unlock func() error, err error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
@@ -70,10 +72,9 @@ func lockForWrite(path string) (unlock func(), err error) {
 		return nil, err
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		f.Close()
-		return nil, err
+		return nil, errors.Join(err, f.Close())
 	}
-	return func() { f.Close() }, nil
+	return f.Close, nil // closing releases the lock
 }
 
 // readState reads state from path as stored. A missing file is an empty state.
@@ -163,13 +164,22 @@ func save(path string, v any) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
+		return errors.Join(err, tmp.Close(), os.Remove(tmp.Name()))
 	}
 	if err := tmp.Close(); err != nil {
+		return errors.Join(err, os.Remove(tmp.Name()))
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return errors.Join(err, os.Remove(tmp.Name()))
+	}
+	return nil
+}
+
+// removeIfExists removes path; a file that is already gone is not an error.
+func removeIfExists(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	return os.Rename(tmp.Name(), path)
+	return nil
 }

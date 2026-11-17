@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -33,9 +34,10 @@ type timerView struct {
 // q, Ctrl+C, closed input or a signal on quit stops the session, if it is
 // still active, and returns the finished entry. Each tick redraws, records a
 // heartbeat and rereads the data file.
-func watch(v timerView) (*Entry, error) {
+// A screen that can no longer be drawn ends the view like closed input does.
+func watch(v timerView) (stopped *Entry, err error) {
 	a, scr := v.session, v.screen
-	defer os.Remove(heartbeatPath(v.path, v.pid))
+	defer func() { err = errors.Join(err, removeIfExists(heartbeatPath(v.path, v.pid))) }()
 	for {
 		if err := writeHeartbeat(v.path, Heartbeat{Session: a, PID: v.pid, Seen: v.now()}); err != nil {
 			return nil, err
@@ -44,7 +46,10 @@ func watch(v timerView) (*Entry, error) {
 		if scr.Size != nil {
 			w, h = scr.Size()
 		}
-		fmt.Fprint(scr, frame(a.Project, v.now().Sub(a.Start), w, h))
+		if err := write(scr, frame(a.Project, v.now().Sub(a.Start), w, h)); err != nil {
+			e, stopErr := stopSession(v.path, a, v.now())
+			return e, errors.Join(err, stopErr)
+		}
 		select {
 		case k, ok := <-v.keys:
 			if !ok || k == 'q' || k == ctrlC {
