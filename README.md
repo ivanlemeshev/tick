@@ -26,11 +26,17 @@ All days  1h40m0s
 In a terminal, `tick start` takes over the screen with the project name and a
 live timer. Press `q` or Ctrl+C to stop tracking and return to the shell. When
 output is piped, `start` just starts tracking and exits. Running `tick start`
-on the project already active reopens its timer. Closing the terminal leaves the
-session running; `tick stop` ends it later.
+on the project already active reopens its timer.
+
+Ending the timer any other way also stops tracking and saves it: closing the
+terminal, `kill`, Ctrl+C or a hangup. Even `kill -9` or a crash, which no
+program can intercept, loses at most about a second: the timer leaves a
+heartbeat each second, and the next `tick` command closes the session at the
+last one. Saves are atomic, so a kill during a write never corrupts history.
 
 Data is stored as JSON in `$TICK_FILE`, or `~/.tick.json` by default. Writes are
-atomic, so a crash leaves either the old file or the new one.
+atomic, so a crash leaves either the old file or the new one. While a timer
+is open it also keeps `<data file>.view.<pid>`, removed when it exits.
 
 ## Glossary
 
@@ -38,6 +44,8 @@ atomic, so a crash leaves either the old file or the new one.
 - **Active session**: the one project being tracked right now. There is at most one.
 - **Entry**: a finished stretch of time for a project, with a start and an end.
 - **Timer view**: the full-screen display opened by `tick start` in a terminal. It follows one session: if that session is stopped or replaced from another terminal, the view closes without stopping anything.
+- **Heartbeat**: a timer view's last sign of life, its process ID and time, written each second to its own file.
+- **Recovery**: when every view following the active session has died without stopping it, the session ends at the latest heartbeat. A session started without a view has no heartbeat and keeps running until `tick stop`.
 - **Switch**: `tick start` on a different project while one is active stops the active one first.
 - **Day**: a calendar day in your local time zone. Time that crosses midnight is split between the two days.
 - **Summary**: total time per project, sorted by name, plus a total for all projects.
