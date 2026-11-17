@@ -57,11 +57,12 @@ Running `start` on the project already active, or `stop` when nothing is active,
 
 ## Development
 
-[mise](https://mise.jdx.dev) pins the Go toolchain and runs the tasks:
+[mise](https://mise.jdx.dev) pins Go and golangci-lint and runs the tasks:
 
 ```
 mise install    # install the pinned Go version
 mise run test   # all tests with the race detector, printing total coverage
+mise run lint   # golangci-lint, configured in .golangci.yml
 ```
 
 ## License

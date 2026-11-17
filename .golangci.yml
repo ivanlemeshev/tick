@@ -1,0 +1,17 @@
+version: "2"
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - errorlint # wrapped errors compared with == or type assertions
+    - gocritic # common bug patterns and style issues
+    - misspell
+    - nilerr # returning nil when an error was checked
+    - nolintlint # malformed or unused //nolint directives
+    - unconvert # needless type conversions
+    - unparam # parameters or results that never vary
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
