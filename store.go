@@ -33,8 +33,15 @@ func loadWithHeartbeats(path string) (State, map[string]Heartbeat, error) {
 }
 
 // update loads state, applies f, and saves and returns the result.
-// Heartbeats of dead views are removed once the recovered state is saved.
+// It holds the write lock throughout, so concurrent updates never lose
+// each other's changes. Heartbeats of dead views are removed once the
+// recovered state is saved.
 func update(path string, f func(State) State) (State, error) {
+	unlock, err := lockForWrite(path)
+	if err != nil {
+		return State{}, err
+	}
+	defer unlock()
 	s, hbs, err := loadWithHeartbeats(path)
 	if err != nil {
 		return s, err
@@ -49,6 +56,24 @@ func update(path string, f func(State) State) (State, error) {
 		}
 	}
 	return next, nil
+}
+
+// lockForWrite blocks until this process is the only writer of path.
+// The lock lives on a separate file because save replaces path itself.
+// The OS releases it if the process dies.
+func lockForWrite(path string) (unlock func(), err error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return func() { f.Close() }, nil
 }
 
 // readState reads state from path as stored. A missing file is an empty state.

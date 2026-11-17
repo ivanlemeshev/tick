@@ -57,6 +57,12 @@ func (w *watcher) tick(now time.Time) {
 	w.keys <- 'x' // ignored; received only once the tick is fully handled
 }
 
+// heartbeats lists the heartbeat files next to the data file.
+func (s *session) heartbeats() []string {
+	files, _ := filepath.Glob(s.path + ".view.*")
+	return files
+}
+
 // deadPID returns the ID of a process that has already exited.
 func deadPID(t *testing.T) int {
 	cmd := exec.Command("true")
@@ -196,8 +202,8 @@ All days  2m0s
 	if out := s.ok("stop"); out != "nothing to stop\n" {
 		t.Fatalf("stop after recovery = %q", out)
 	}
-	if files, _ := filepath.Glob(filepath.Join(filepath.Dir(s.path), "*")); len(files) != 1 {
-		t.Fatalf("leftover files after recovery: %v", files)
+	if files := s.heartbeats(); len(files) != 0 {
+		t.Fatalf("heartbeats left after recovery: %v", files)
 	}
 	w.quit <- syscall.SIGTERM // let the abandoned goroutine finish; nothing to stop
 	if r := w.result(t); r.stopped != nil {
@@ -223,8 +229,8 @@ All days  12m0s
 	if r := w.result(t); r.stopped == nil {
 		t.Fatalf("watch result = %+v", r)
 	}
-	if files, _ := filepath.Glob(filepath.Join(filepath.Dir(s.path), "*")); len(files) != 1 {
-		t.Fatalf("view left files behind: %v", files)
+	if files := s.heartbeats(); len(files) != 0 {
+		t.Fatalf("view left heartbeats behind: %v", files)
 	}
 }
 
