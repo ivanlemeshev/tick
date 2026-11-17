@@ -49,6 +49,19 @@ func Stop(s State, now time.Time) (State, *Entry) {
 	return State{Entries: append(slices.Clone(s.Entries), e)}, &e
 }
 
+// Is reports whether a and b are the same session.
+func (a Active) Is(b Active) bool {
+	return a.Project == b.Project && a.Start.Equal(b.Start)
+}
+
+// StopSession stops a only if it is still the active session.
+func StopSession(s State, a Active, now time.Time) (State, *Entry) {
+	if s.Active == nil || !s.Active.Is(a) {
+		return s, nil
+	}
+	return Stop(s, now)
+}
+
 // Start begins tracking p, stopping any other active project first.
 // Starting the project already being tracked changes nothing.
 func Start(s State, p Project, now time.Time) (next State, stopped *Entry, started bool) {

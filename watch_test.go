@@ -1,0 +1,188 @@
+package main
+
+import (
+	"bytes"
+	"strings"
+	"testing"
+	"time"
+)
+
+// watcher runs the full-screen view against a session, fed by fake keys and ticks.
+type watcher struct {
+	keys  chan byte
+	ticks chan time.Time
+	out   bytes.Buffer
+	done  chan watchResult
+}
+
+type watchResult struct {
+	stopped *Entry
+	err     error
+}
+
+func (s *session) active() Active {
+	s.t.Helper()
+	st, err := load(s.path)
+	if err != nil || st.Active == nil {
+		s.t.Fatalf("no active session: %v", err)
+	}
+	return *st.Active
+}
+
+func (s *session) watch() *watcher {
+	w := &watcher{keys: make(chan byte), ticks: make(chan time.Time), done: make(chan watchResult)}
+	a := s.active()
+	go func() {
+		e, err := watch(s.path, a, w.keys, w.ticks, s.clock, screen{Writer: &w.out})
+		w.done <- watchResult{e, err}
+	}()
+	return w
+}
+
+func (w *watcher) result(t *testing.T) watchResult {
+	t.Helper()
+	select {
+	case r := <-w.done:
+		return r
+	case <-time.After(2 * time.Second):
+		t.Fatal("watch did not return")
+		return watchResult{}
+	}
+}
+
+func TestWatchShowsProjectAndTimerAndStopsOnQ(t *testing.T) {
+	s := newSession(t)
+	s.ok("start", "alpha")
+	s.wait(90 * time.Second)
+	w := s.watch()
+	w.keys <- 'q'
+	r := w.result(t)
+	if r.err != nil || r.stopped == nil || r.stopped.End.Sub(r.stopped.Start) != 90*time.Second {
+		t.Fatalf("watch result = %+v", r)
+	}
+	if out := w.out.String(); !strings.Contains(out, "alpha") || !strings.Contains(out, "00:01:30") {
+		t.Fatalf("screen does not show project and timer:\n%q", out)
+	}
+	if out := s.ok("stop"); out != "nothing to stop\n" {
+		t.Fatalf("session still running after q: %q", out)
+	}
+}
+
+func TestWatchUpdatesTimerAndIgnoresOtherKeys(t *testing.T) {
+	s := newSession(t)
+	s.ok("start", "alpha")
+	w := s.watch()
+	w.keys <- 'x'
+	s.wait(time.Hour + 2*time.Minute + 3*time.Second)
+	w.ticks <- s.clock()
+	w.keys <- 3 // Ctrl+C
+	if r := w.result(t); r.stopped == nil {
+		t.Fatalf("Ctrl+C did not stop: %+v", r)
+	}
+	if out := w.out.String(); !strings.Contains(out, "01:02:03") {
+		t.Fatalf("timer not updated:\n%q", out)
+	}
+}
+
+func TestWatchExitsWhenStoppedElsewhere(t *testing.T) {
+	s := newSession(t)
+	s.ok("start", "alpha")
+	w := s.watch()
+	s.wait(time.Minute)
+	s.ok("stop")
+	w.ticks <- s.clock()
+	if r := w.result(t); r.err != nil || r.stopped != nil {
+		t.Fatalf("watch result = %+v", r)
+	}
+}
+
+func TestWatchDoesNotStopAProjectStartedElsewhere(t *testing.T) {
+	s := newSession(t)
+	s.ok("start", "alpha")
+	w := s.watch()
+	s.wait(time.Minute)
+	s.ok("start", "beta")
+	s.wait(time.Minute)
+	w.keys <- 'q'
+	if r := w.result(t); r.err != nil || r.stopped != nil {
+		t.Fatalf("watch result = %+v", r)
+	}
+	s.wantReport(`
+2026-11-17  2m0s
+  alpha  1m0s
+  beta   1m0s (running)
+
+All days  2m0s
+  alpha  1m0s
+  beta   1m0s (running)
+`)
+}
+
+func TestWatchLeavesSessionRunningWhenInputCloses(t *testing.T) {
+	s := newSession(t)
+	s.ok("start", "alpha")
+	w := s.watch()
+	close(w.keys)
+	if r := w.result(t); r.err != nil || r.stopped != nil {
+		t.Fatalf("watch result = %+v", r)
+	}
+	s.active()
+}
+
+func TestStartFollowsTheActiveSession(t *testing.T) {
+	s := newSession(t)
+	var followed []Active
+	s.follow = func(a Active) error { followed = append(followed, a); return nil }
+	s.ok("start", "alpha")
+	s.wait(time.Minute)
+	s.ok("start", "alpha") // already tracking: reattach to the same session
+	want := Active{Project: "alpha", Start: time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)}
+	if len(followed) != 2 || !followed[0].Start.Equal(want.Start) || followed[1] != followed[0] || followed[0].Project != want.Project {
+		t.Fatalf("followed = %+v", followed)
+	}
+}
+
+func TestWatchCentersTextOnTheScreen(t *testing.T) {
+	s := newSession(t)
+	s.ok("start", "alpha")
+	a := s.active()
+	var out bytes.Buffer
+	keys := make(chan byte, 1)
+	keys <- 'q'
+	scr := screen{Writer: &out, Size: func() (int, int) { return 40, 9 }}
+	if _, err := watch(s.path, a, keys, nil, s.clock, scr); err != nil {
+		t.Fatal(err)
+	}
+	// 3 lines on 9 rows start at row 4; "alpha" is 5 wide on 40 columns, "00:00:00" is 8.
+	for _, want := range []string{"\x1b[4;18Halpha", "\x1b[5;17H00:00:00", "\x1b[6;13Hpress q to stop"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("screen missing %q:\n%q", want, out.String())
+		}
+	}
+}
+
+func TestWatchTimerNeverShowsNegativeTime(t *testing.T) {
+	s := newSession(t)
+	s.ok("start", "alpha")
+	s.wait(-time.Minute) // system clock corrected backward
+	w := s.watch()
+	w.keys <- 'q'
+	w.result(t)
+	if out := w.out.String(); !strings.Contains(out, "00:00:00") {
+		t.Fatalf("want 00:00:00:\n%q", out)
+	}
+}
+
+func TestWatchExitsWhenSameProjectIsRestartedElsewhere(t *testing.T) {
+	s := newSession(t)
+	s.ok("start", "alpha")
+	w := s.watch()
+	s.wait(time.Minute)
+	s.ok("stop")
+	s.ok("start", "alpha") // a new session with the same project
+	w.ticks <- s.clock()
+	if r := w.result(t); r.err != nil || r.stopped != nil {
+		t.Fatalf("watch result = %+v", r)
+	}
+	s.active() // the new session is still running
+}

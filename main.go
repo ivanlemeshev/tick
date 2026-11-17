@@ -24,7 +24,7 @@ var errUsage = errors.New(usage)
 func main() {
 	path, err := dataPath()
 	if err == nil {
-		err = run(os.Args[1:], path, time.Now, os.Stdout)
+		err = run(os.Args[1:], path, time.Now, os.Stdout, terminalFollower(path, os.Stdout))
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "tick:", err)
@@ -43,7 +43,8 @@ func dataPath() (string, error) {
 	return filepath.Join(home, ".tick.json"), nil
 }
 
-func run(args []string, path string, now func() time.Time, out io.Writer) error {
+// run executes one command. After start, follow (if not nil) is shown the active session.
+func run(args []string, path string, now func() time.Time, out io.Writer, follow func(Active) error) error {
 	if len(args) == 0 {
 		return errUsage
 	}
@@ -54,9 +55,14 @@ func run(args []string, path string, now func() time.Time, out io.Writer) error 
 		if err != nil {
 			return fmt.Errorf("%w\n%s", err, usage)
 		}
-		return update(path, func(s State) State { return start(s, p, now(), out) })
+		next, err := update(path, func(s State) State { return start(s, p, now(), out) })
+		if err != nil || follow == nil {
+			return err
+		}
+		return follow(*next.Active)
 	case cmd == "stop" && len(rest) == 0:
-		return update(path, func(s State) State { return stop(s, now(), out) })
+		_, err := update(path, func(s State) State { return stop(s, now(), out) })
+		return err
 	case cmd == "report" && len(rest) == 0:
 		s, err := load(path)
 		if err != nil {
@@ -67,13 +73,14 @@ func run(args []string, path string, now func() time.Time, out io.Writer) error 
 	return errUsage
 }
 
-// update loads state, applies f, and saves the result.
-func update(path string, f func(State) State) error {
+// update loads state, applies f, and saves and returns the result.
+func update(path string, f func(State) State) (State, error) {
 	s, err := load(path)
 	if err != nil {
-		return err
+		return s, err
 	}
-	return save(path, f(s))
+	next := f(s)
+	return next, save(path, next)
 }
 
 func start(s State, p Project, now time.Time, out io.Writer) State {

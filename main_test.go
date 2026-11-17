@@ -5,15 +5,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 // session drives the CLI the way a user does: same data file, advancing clock.
 type session struct {
-	t    *testing.T
-	path string
-	now  time.Time
+	t      *testing.T
+	path   string
+	now    time.Time
+	follow func(Active) error
+	mu     sync.Mutex // guards now, which a watch goroutine may read
 }
 
 func newSession(t *testing.T) *session {
@@ -26,7 +29,7 @@ func newSession(t *testing.T) *session {
 
 func (s *session) run(args ...string) (string, error) {
 	var out bytes.Buffer
-	err := run(args, s.path, func() time.Time { return s.now }, &out)
+	err := run(args, s.path, s.clock, &out, s.follow)
 	return out.String(), err
 }
 
@@ -39,7 +42,17 @@ func (s *session) ok(args ...string) string {
 	return out
 }
 
-func (s *session) wait(d time.Duration) { s.now = s.now.Add(d) }
+func (s *session) clock() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.now
+}
+
+func (s *session) wait(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.now = s.now.Add(d)
+}
 
 // wantReport checks tick report output; want starts with a newline for readability.
 func (s *session) wantReport(want string) {
@@ -192,6 +205,7 @@ func TestUnwritablePathIsReported(t *testing.T) {
 
 func TestCorruptDataFileIsReportedAndLeftAlone(t *testing.T) {
 	s := newSession(t)
+	s.follow = func(Active) error { t.Fatal("follow called after a failed start"); return nil }
 	if err := os.WriteFile(s.path, []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
