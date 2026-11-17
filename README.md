@@ -75,6 +75,22 @@ GitHub Actions runs each of these tasks as its own workflow on every push to
 `main` and every pull request, with tool versions taken from `mise.toml`. CodeQL
 also scans the code for security issues on each push, pull request and weekly.
 
+## Releasing
+
+Versions are git tags of the form `vMAJOR.MINOR.PATCH`; there is no version file.
+
+```
+mise run release          # v1.2.3 -> v1.2.4 (default)
+mise run release minor    # v1.2.3 -> v1.3.0
+mise run release major    # v1.2.3 -> v2.0.0
+```
+
+It bumps the highest existing `vX.Y.Z` tag (starting from `v0.0.0`), creates an
+annotated tag and pushes it to `origin`. It only releases from `main` with a
+clean working tree, when `HEAD` matches `origin/main`. Running it again on an
+already released commit just pushes that tag, so a release whose push failed
+can be finished by rerunning it.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

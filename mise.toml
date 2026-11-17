@@ -15,3 +15,7 @@ run = "golangci-lint run"
 [tasks.build]
 description = "Check that the binary builds, without keeping it"
 run = "go build -o /dev/null ./..."
+
+[tasks.release]
+description = "Tag and push the next version: mise run release [patch|minor|major]"
+run = "scripts/release.sh" # mise appends the arguments, e.g. `minor`
