@@ -11,3 +11,7 @@ run = "go test -race -cover ./..."
 [tasks.lint]
 description = "Run golangci-lint"
 run = "golangci-lint run"
+
+[tasks.build]
+description = "Check that the binary builds, without keeping it"
+run = "go build -o /dev/null ./..."

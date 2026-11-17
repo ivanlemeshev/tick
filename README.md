@@ -63,7 +63,11 @@ Running `start` on the project already active, or `stop` when nothing is active,
 mise install    # install the pinned Go version
 mise run test   # all tests with the race detector, printing total coverage
 mise run lint   # golangci-lint, configured in .golangci.yml
+mise run build  # check that it builds, keeping no binary
 ```
+
+GitHub Actions runs the same three tasks on every push to `main` and every pull
+request, with tool versions taken from `mise.toml`.
 
 ## License
 
