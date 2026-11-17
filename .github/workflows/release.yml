@@ -1,0 +1,27 @@
+name: Release
+
+# Runs when `mise run release` pushes a vX.Y.Z tag: builds tick for macOS and
+# Linux and publishes a GitHub Release with the archives and generated notes.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write # create the release and upload its files
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false # never interrupt a release halfway
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # full history and tags, for the release notes
+      - uses: jdx/mise-action@v5
+      - run: mise run test # never publish a commit whose tests fail
+      - run: goreleaser release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

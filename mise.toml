@@ -3,6 +3,7 @@
 [tools]
 go = "1.27.3" # keep in sync with the go directive in go.mod
 golangci-lint = "2.15.0"
+goreleaser = "2.20.2"
 
 [tasks.test]
 description = "Run all tests with the race detector and print coverage"
@@ -19,3 +20,11 @@ run = "go build -o /dev/null ./..."
 [tasks.release]
 description = "Tag and push the next version: mise run release [patch|minor|major]"
 run = "scripts/release.sh" # mise appends the arguments, e.g. `minor`
+
+[tasks.release-check]
+description = "Validate the GoReleaser config and build all release archives locally"
+run = [
+  "goreleaser check",
+  "goreleaser release --snapshot --clean",
+  "rm -rf dist", # only checking that it builds; keep no artifacts
+]

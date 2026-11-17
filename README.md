@@ -93,6 +93,15 @@ clean working tree, when `HEAD` matches `origin/main`. Running it again on an
 already released commit just pushes that tag, so a release whose push failed
 can be finished by rerunning it.
 
+Pushing the tag starts the Release workflow: it runs the tests, then
+[GoReleaser](https://goreleaser.com) builds `tick` for macOS and Linux (amd64
+and arm64) and publishes a GitHub Release with the archives, checksums and
+notes generated from the changes since the previous release.
+
+```
+mise run release-check   # validate .goreleaser.yaml and build every archive, keeping none
+```
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

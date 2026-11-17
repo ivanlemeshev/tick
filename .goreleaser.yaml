@@ -1,0 +1,26 @@
+# Builds and publishes a GitHub Release when a vX.Y.Z tag is pushed
+# (see .github/workflows/release.yml). Check locally: mise run release-check
+version: 2
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux] # tick uses flock and Unix signals, so no Windows
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: ["-s -w"]
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, README.md]
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github # notes from commits and pull requests since the previous tag
+  sort: asc
+
+release:
+  draft: false
