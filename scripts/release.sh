@@ -5,6 +5,8 @@
 # version bumps the highest such tag (v0.0.0 if there is none). Releases are
 # made from main, from a clean tree, of the commit origin/main already has.
 # Running it again on a released commit pushes that tag and changes nothing else.
+# It always asks before tagging or pushing; anything but y or yes cancels,
+# and so does having no input to answer from.
 set -euo pipefail
 
 level=${1:-patch}
@@ -21,6 +23,21 @@ fail() {
 	exit 1
 }
 
+# confirm asks a yes/no question and exits unless the answer is yes.
+confirm() {
+	printf '%s [y/N] ' "$1" >&2
+	local answer=""
+	read -r answer || true
+	case $(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]') in
+	y | yes) ;;
+	*)
+		echo >&2
+		echo "release canceled" >&2
+		exit 1
+		;;
+	esac
+}
+
 semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
 
 [ -z "$(git status --porcelain)" ] || fail "working tree has uncommitted changes"
@@ -31,8 +48,9 @@ git fetch -q --tags origin main
 	fail "HEAD is not origin/main; push main first, or pull if it is behind"
 
 if current=$(git tag --points-at HEAD | grep -E "$semver" | sort -V | tail -n 1); [ -n "$current" ]; then
-	git push -q origin "refs/tags/$current"
 	echo "already released as $current"
+	confirm "Push the existing tag $current to origin?"
+	git push -q origin "refs/tags/$current"
 	exit 0
 fi
 
@@ -45,6 +63,7 @@ minor) next="v$major.$((minor + 1)).0" ;;
 patch) next="v$major.$minor.$((patch + 1))" ;;
 esac
 
+confirm "Release $next (previous: $latest) and push it to origin?"
 git tag -a "$next" -m "Release $next"
 git push -q origin "refs/tags/$next"
 echo "released $next (previous: $latest)"

@@ -85,8 +85,10 @@ mise run release minor    # v1.2.3 -> v1.3.0
 mise run release major    # v1.2.3 -> v2.0.0
 ```
 
-It bumps the highest existing `vX.Y.Z` tag (starting from `v0.0.0`), creates an
-annotated tag and pushes it to `origin`. It only releases from `main` with a
+It bumps the highest existing `vX.Y.Z` tag (starting from `v0.0.0`), shows the
+new version and asks for confirmation, then creates an annotated tag and pushes
+it to `origin`. Anything but `y` or `yes` cancels, and so does running it with
+no terminal to answer from. It only releases from `main` with a
 clean working tree, when `HEAD` matches `origin/main`. Running it again on an
 already released commit just pushes that tag, so a release whose push failed
 can be finished by rerunning it.

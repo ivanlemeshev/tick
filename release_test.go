@@ -65,10 +65,17 @@ func (r *releaseRepo) commitAndPush(msg string) {
 	r.git(r.dir, "push", "-q", "origin", "main")
 }
 
-// release runs the release script the way `mise run release [level]` does.
+// release runs the release script the way `mise run release [level]` does,
+// answering yes to its confirmation.
 func (r *releaseRepo) release(args ...string) (string, error) {
+	return r.releaseAnswering("y\n", args...)
+}
+
+// releaseAnswering runs the release script with answer as the user's input.
+func (r *releaseRepo) releaseAnswering(answer string, args ...string) (string, error) {
 	cmd := exec.Command("bash", append([]string{r.script}, args...)...)
 	cmd.Dir, cmd.Env = r.dir, r.env()
+	cmd.Stdin = strings.NewReader(answer)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
@@ -196,4 +203,58 @@ func TestReleaseRefusesUnsafeStates(t *testing.T) {
 		r.mustFail("push main first")
 		r.wantOriginTags()
 	})
+}
+
+func TestReleaseAsksBeforeTagging(t *testing.T) {
+	r := newReleaseRepo(t)
+	r.git(r.dir, "tag", "-a", "v1.2.3", "-m", "Release v1.2.3")
+	r.git(r.dir, "push", "-q", "origin", "v1.2.3")
+	r.commitAndPush("next")
+	out := r.mustRelease("minor")
+	if !strings.Contains(out, "Release v1.3.0 (previous: v1.2.3) and push it to origin? [y/N]") {
+		t.Fatalf("prompt missing or wrong: %s", out)
+	}
+	r.wantOriginTags("v1.2.3", "v1.3.0")
+}
+
+func TestReleaseDoesNothingUnlessConfirmed(t *testing.T) {
+	for name, answer := range map[string]string{
+		"no":        "n\n",
+		"enter":     "\n",
+		"other":     "maybe\n",
+		"almost":    "yeah\n", // only y or yes confirm
+		"no answer": "",       // not interactive: input closes without an answer
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newReleaseRepo(t)
+			out, err := r.releaseAnswering(answer)
+			if err == nil || !strings.Contains(out, "release canceled") {
+				t.Fatalf("want canceled, got err=%v\n%s", err, out)
+			}
+			if tags := r.git(r.dir, "tag"); tags != "" {
+				t.Fatalf("local tags created: %s", tags)
+			}
+			r.wantOriginTags()
+		})
+	}
+}
+
+func TestReleaseAcceptsYes(t *testing.T) {
+	for _, answer := range []string{"y\n", "Y\n", "yes\n", "YES\n"} {
+		r := newReleaseRepo(t)
+		if _, err := r.releaseAnswering(answer); err != nil {
+			t.Fatalf("answer %q: %v", answer, err)
+		}
+		r.wantOriginTags("v0.0.1")
+	}
+}
+
+func TestReleaseRerunAsksBeforePushing(t *testing.T) {
+	r := newReleaseRepo(t)
+	r.git(r.dir, "tag", "-a", "v0.4.0", "-m", "Release v0.4.0") // tagged, push never happened
+	out, err := r.releaseAnswering("n\n")
+	if err == nil || !strings.Contains(out, "Push the existing tag v0.4.0 to origin? [y/N]") {
+		t.Fatalf("want prompt and cancel, got err=%v\n%s", err, out)
+	}
+	r.wantOriginTags()
 }
