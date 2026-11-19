@@ -1,30 +1,76 @@
 # Project toolchain and tasks. Install tools with `mise install`.
 
 [tools]
-go = "1.27.3" # keep in sync with the go directive in go.mod
+go = "1.27.3"  # keep in sync with the go directive in go.mod
 golangci-lint = "2.15.0"
 goreleaser = "2.20.2"
+node = "26.13.0"
+"npm:prettier" = "3.9.10"
+"npm:markdownlint-cli" = "0.50.0"
+shfmt = "3.14.1"
+shellcheck = "0.11.0"
+tombi = "1.11.2"
+
+[tasks.format]
+description = "Format Go, Markdown, YAML, TOML, and Bash files."
+quiet = true
+output = "interleave"
+run = '''
+set -eu
+bash scripts/run-step.sh 'Formatting Go' golangci-lint fmt
+bash scripts/run-step.sh 'Formatting Markdown' prettier --write --ignore-path .gitignore '**/*.md'
+bash scripts/run-step.sh 'Formatting YAML' prettier --write --ignore-path .gitignore '**/*.{yml,yaml}' '.github/**/*.yml'
+bash scripts/run-step.sh 'Formatting Bash' shfmt -w -i 2 -ci scripts
+bash scripts/run-step.sh 'Formatting TOML' tombi format
+'''
+
+[tasks."format:check"]
+description = "Check file formatting without changes."
+quiet = true
+output = "interleave"
+run = '''
+set -eu
+bash scripts/run-step.sh 'Checking Go formatting' golangci-lint fmt --diff
+bash scripts/run-step.sh 'Checking Markdown formatting' prettier --check --ignore-path .gitignore '**/*.md'
+bash scripts/run-step.sh 'Checking YAML formatting' prettier --check --ignore-path .gitignore '**/*.{yml,yaml}' '.github/**/*.yml'
+bash scripts/run-step.sh 'Checking Bash formatting' shfmt -d -i 2 -ci scripts
+bash scripts/run-step.sh 'Checking TOML formatting' tombi format --check
+'''
+
+[tasks.lint]
+description = "Check Go, Markdown, TOML, and Bash files."
+quiet = true
+output = "interleave"
+run = '''
+set -eu
+bash scripts/run-step.sh 'Linting Go' golangci-lint run
+bash scripts/run-step.sh 'Linting Markdown' markdownlint --ignore-path .gitignore '**/*.md'
+bash scripts/run-step.sh 'Linting Bash' find scripts -type f -name '*.sh' -exec shellcheck {} +
+bash scripts/run-step.sh 'Linting TOML' tombi lint
+'''
 
 [tasks.test]
 description = "Run all tests with the race detector and print coverage"
 run = "go test -race -cover ./..."
 
-[tasks.lint]
-description = "Run golangci-lint"
-run = "golangci-lint run"
-
 [tasks.build]
 description = "Check that the binary builds, without keeping it"
 run = "go build -o /dev/null ./..."
 
+[tasks.check]
+description = "Run format, lint, test, and build checks."
+quiet = true
+depends = [{ task = "format:check" }, { task = "lint" }, { task = "test" }, { task = "build" }]
+run = "true"
+
 [tasks.release]
 description = "Tag and push the next version: mise run release [patch|minor|major]"
-run = "scripts/release.sh" # mise appends the arguments, e.g. `minor`
+run = "scripts/release.sh"  # mise appends the arguments, e.g. `minor`
 
 [tasks.release-check]
 description = "Validate the GoReleaser config and build all release archives locally"
 run = [
   "goreleaser check",
   "goreleaser release --snapshot --clean",
-  "rm -rf dist", # only checking that it builds; keep no artifacts
+  "rm -rf dist",  # only checking that it builds; keep no artifacts
 ]

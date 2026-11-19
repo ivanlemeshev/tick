@@ -11,31 +11,31 @@ set -euo pipefail
 
 level=${1:-patch}
 case $level in
-patch | minor | major) ;;
-*)
-	echo "usage: mise run release [patch|minor|major]" >&2
-	exit 2
-	;;
+  patch | minor | major) ;;
+  *)
+    echo "usage: mise run release [patch|minor|major]" >&2
+    exit 2
+    ;;
 esac
 
 fail() {
-	echo "release: $*" >&2
-	exit 1
+  echo "release: $*" >&2
+  exit 1
 }
 
 # confirm asks a yes/no question and exits unless the answer is yes.
 confirm() {
-	printf '%s [y/N] ' "$1" >&2
-	local answer=""
-	read -r answer || true
-	case $(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]') in
-	y | yes) ;;
-	*)
-		echo >&2
-		echo "release canceled" >&2
-		exit 1
-		;;
-	esac
+  printf '%s [y/N] ' "$1" >&2
+  local answer=""
+  read -r answer || true
+  case $(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]') in
+    y | yes) ;;
+    *)
+      echo >&2
+      echo "release canceled" >&2
+      exit 1
+      ;;
+  esac
 }
 
 semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
@@ -45,22 +45,25 @@ semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
 git remote get-url origin >/dev/null 2>&1 || fail "no origin remote to push the release to"
 git fetch -q --tags origin main
 [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] ||
-	fail "HEAD is not origin/main; push main first, or pull if it is behind"
+  fail "HEAD is not origin/main; push main first, or pull if it is behind"
 
-if current=$(git tag --points-at HEAD | grep -E "$semver" | sort -V | tail -n 1); [ -n "$current" ]; then
-	echo "already released as $current"
-	confirm "Push the existing tag $current to origin?"
-	git push -q origin "refs/tags/$current"
-	exit 0
+if
+  current=$(git tag --points-at HEAD | grep -E "$semver" | sort -V | tail -n 1)
+  [ -n "$current" ]
+then
+  echo "already released as $current"
+  confirm "Push the existing tag $current to origin?"
+  git push -q origin "refs/tags/$current"
+  exit 0
 fi
 
 latest=$(git tag --list 'v*' | grep -E "$semver" | sort -V | tail -n 1 || true)
 latest=${latest:-v0.0.0}
 IFS=. read -r major minor patch <<<"${latest#v}"
 case $level in
-major) next="v$((major + 1)).0.0" ;;
-minor) next="v$major.$((minor + 1)).0" ;;
-patch) next="v$major.$minor.$((patch + 1))" ;;
+  major) next="v$((major + 1)).0.0" ;;
+  minor) next="v$major.$((minor + 1)).0" ;;
+  patch) next="v$major.$minor.$((patch + 1))" ;;
 esac
 
 confirm "Release $next (previous: $latest) and push it to origin?"

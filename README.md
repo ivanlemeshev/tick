@@ -1,5 +1,6 @@
 # tick
 
+[![Format](https://github.com/ivanlemeshev/tick/actions/workflows/format.yml/badge.svg)](https://github.com/ivanlemeshev/tick/actions/workflows/format.yml)
 [![Lint](https://github.com/ivanlemeshev/tick/actions/workflows/lint.yml/badge.svg)](https://github.com/ivanlemeshev/tick/actions/workflows/lint.yml)
 [![Test](https://github.com/ivanlemeshev/tick/actions/workflows/test.yml/badge.svg)](https://github.com/ivanlemeshev/tick/actions/workflows/test.yml)
 [![Build](https://github.com/ivanlemeshev/tick/actions/workflows/build.yml/badge.svg)](https://github.com/ivanlemeshev/tick/actions/workflows/build.yml)
@@ -7,7 +8,7 @@
 
 A minimal command-line time tracker.
 
-```
+```sh
 go install github.com/ivanlemeshev/tick@latest
 
 tick start <project>   # start tracking and open the full-screen timer; switches if another project is running
@@ -15,7 +16,7 @@ tick stop              # stop the running project
 tick report            # time per day and for all days, per project
 ```
 
-```
+```text
 2026-11-17  1h30m0s
   alpha  30m0s
   beta   1h0m0s
@@ -62,24 +63,25 @@ Running `start` on the project already active, or `stop` when nothing is active,
 
 ## Development
 
-[mise](https://mise.jdx.dev) pins Go and golangci-lint and runs the tasks:
+[mise](https://mise.jdx.dev) pins Go, golangci-lint, and the format and lint tools, and runs the tasks:
 
-```
-mise install    # install the pinned Go version
-mise run test   # all tests with the race detector, printing total coverage
-mise run lint   # golangci-lint, configured in .golangci.yml
-mise run build  # check that it builds, keeping no binary
+```sh
+mise install              # install the pinned tools
+mise run format           # format Go, Markdown, YAML, TOML, and Bash files
+mise run format:check     # check formatting without changes
+mise run lint             # golangci-lint, markdownlint, shellcheck, and tombi
+mise run test             # all tests with the race detector, printing total coverage
+mise run build            # check that it builds, keeping no binary
+mise run check            # all of the above checks
 ```
 
-GitHub Actions runs each of these tasks as its own workflow on every push to
-`main` and every pull request, with tool versions taken from `mise.toml`. CodeQL
-also scans the code for security issues on each push, pull request and weekly.
+GitHub Actions runs `format:check`, `lint`, `test`, and `build` each as its own workflow on every push to `main` and every pull request, with tool versions taken from `mise.toml`. CodeQL also scans the code for security issues on each push, pull request and weekly.
 
 ## Releasing
 
 Versions are git tags of the form `vMAJOR.MINOR.PATCH`; there is no version file.
 
-```
+```sh
 mise run release          # v1.2.3 -> v1.2.4 (default)
 mise run release minor    # v1.2.3 -> v1.3.0
 mise run release major    # v1.2.3 -> v2.0.0
@@ -98,7 +100,7 @@ Pushing the tag starts the Release workflow: it runs the tests, then
 and arm64) and publishes a GitHub Release with the archives, checksums and
 notes generated from the changes since the previous release.
 
-```
+```sh
 mise run release-check   # validate .goreleaser.yaml and build every archive, keeping none
 ```
 
