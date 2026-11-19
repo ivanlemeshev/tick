@@ -3,11 +3,13 @@
 //	tick start <project>   start tracking a project (switches if another is running)
 //	tick stop              stop the running project
 //	tick report            show total time per project
+//	tick remove <project>  delete all time of a project, after asking
 //
 // Data lives in $TICK_FILE, or ~/.tick.json by default.
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -18,14 +20,14 @@ import (
 	"unicode/utf8"
 )
 
-const usage = "usage: tick start <project> | tick stop | tick report"
+const usage = "usage: tick start <project> | tick stop | tick report | tick remove <project>"
 
 var errUsage = errors.New(usage)
 
 func main() {
 	path, err := dataPath()
 	if err == nil {
-		err = run(os.Args[1:], path, time.Now, os.Stdout, terminalFollower(path, os.Stdout))
+		err = run(os.Args[1:], path, time.Now, os.Stdin, os.Stdout, terminalFollower(path, os.Stdout))
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "tick:", err)
@@ -44,8 +46,9 @@ func dataPath() (string, error) {
 	return filepath.Join(home, ".tick.json"), nil
 }
 
-// run executes one command. After start, follow (if not nil) is shown the active session.
-func run(args []string, path string, now func() time.Time, out io.Writer, follow func(Active) error) error {
+// run executes one command. remove reads its answer from in.
+// After start, follow (if not nil) is shown the active session.
+func run(args []string, path string, now func() time.Time, in io.Reader, out io.Writer, follow func(Active) error) error {
 	if len(args) == 0 {
 		return errUsage
 	}
@@ -77,8 +80,73 @@ func run(args []string, path string, now func() time.Time, out io.Writer, follow
 			return err
 		}
 		return write(out, report(s, now()))
+	case cmd == "remove":
+		p, err := ParseProject(rest)
+		if err != nil {
+			return fmt.Errorf("%w\n%s", err, usage)
+		}
+		return remove(path, p, in, out)
 	}
 	return errUsage
+}
+
+// remove shows what removing p deletes and deletes it only if the user
+// answers yes. If p changes while the question is open, nothing is removed.
+func remove(path string, p Project, in io.Reader, out io.Writer) error {
+	s, err := load(path)
+	if err != nil {
+		return err
+	}
+	_, shown, err := Remove(s, p)
+	if err != nil {
+		return err
+	}
+	if len(shown) == 0 {
+		return write(out, fmt.Sprintf("no time tracked for %s\n", p))
+	}
+	if err := write(out, fmt.Sprintf("remove %s: %s? [y/N] ", p, describe(shown))); err != nil {
+		return err
+	}
+	if !confirmed(in) {
+		return write(out, "nothing removed\n")
+	}
+	var removeErr error
+	_, err = update(path, func(s State) State {
+		next, removed, err := Remove(s, p)
+		if err == nil && !sameEntries(removed, shown) {
+			err = fmt.Errorf("%s changed while asking; nothing removed", p)
+		}
+		if err != nil {
+			removeErr = err
+			return s
+		}
+		return next
+	})
+	if err := errors.Join(err, removeErr); err != nil {
+		return err
+	}
+	return write(out, fmt.Sprintf("removed %s\n", p))
+}
+
+// describe says how many entries there are and how much time they hold.
+func describe(es []Entry) string {
+	var total time.Duration
+	for _, e := range es {
+		total += e.End.Sub(e.Start)
+	}
+	noun := "entries"
+	if len(es) == 1 {
+		noun = "entry"
+	}
+	return fmt.Sprintf("%d %s, %s in total", len(es), noun, human(total))
+}
+
+// confirmed reads one line from in and reports whether it is y or yes.
+// No input, as from a closed stdin, is no.
+func confirmed(in io.Reader) bool {
+	line, _ := bufio.NewReader(in).ReadString('\n')
+	answer := strings.ToLower(strings.TrimSpace(line))
+	return answer == "y" || answer == "yes"
 }
 
 // write is the one place command output reaches the user.

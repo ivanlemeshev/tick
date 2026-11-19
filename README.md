@@ -14,6 +14,7 @@ go install github.com/ivanlemeshev/tick@latest
 tick start <project>   # start tracking and open the full-screen timer; switches if another project is running
 tick stop              # stop the running project
 tick report            # time per day and for all days, per project
+tick remove <project>  # delete all time of a project, after you confirm
 ```
 
 ```text
@@ -60,6 +61,8 @@ several terminals at once never lose each other's changes.
 - **Report**: a summary for each day, oldest first, then a summary for all days. It counts the active session up to now, marked `(running)`, and rounds to the second.
 
 Running `start` on the project already active, or `stop` when nothing is active, changes nothing.
+
+`tick remove <project>` shows how many entries and how much time it will delete, then asks `[y/N]`. Only `y` or `yes` deletes. Any other answer, or no input, deletes nothing. It refuses to remove the running project: stop it first. If the project changes in another terminal while the question is open, it deletes nothing and fails. Removing a project with no time tracked does nothing.
 
 ## Development
 

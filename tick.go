@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -202,4 +203,28 @@ func summarize(pieces []piece) Summary {
 	}
 	slices.SortFunc(sum.Lines, func(a, b Line) int { return strings.Compare(string(a.Project), string(b.Project)) })
 	return sum
+}
+
+// Remove deletes every finished entry of p and returns them.
+// It refuses while p is active, so a running timer never loses its project.
+func Remove(s State, p Project) (next State, removed []Entry, err error) {
+	if s.Active != nil && s.Active.Project == p {
+		return s, nil, fmt.Errorf("stop %s before removing it", p)
+	}
+	next = State{Active: s.Active}
+	for _, e := range s.Entries {
+		if e.Project == p {
+			removed = append(removed, e)
+		} else {
+			next.Entries = append(next.Entries, e)
+		}
+	}
+	return next, removed, nil
+}
+
+// sameEntries reports whether a and b are the same entries in the same order.
+func sameEntries(a, b []Entry) bool {
+	return slices.EqualFunc(a, b, func(x, y Entry) bool {
+		return x.Project == y.Project && x.Start.Equal(y.Start) && x.End.Equal(y.End)
+	})
 }

@@ -16,6 +16,7 @@ type session struct {
 	path   string
 	now    time.Time
 	follow func(Active) error
+	in     string     // what the user types at a prompt
 	mu     sync.Mutex // guards now, which a watch goroutine may read
 }
 
@@ -29,7 +30,7 @@ func newSession(t *testing.T) *session {
 
 func (s *session) run(args ...string) (string, error) {
 	var out bytes.Buffer
-	err := run(args, s.path, s.clock, &out, s.follow)
+	err := run(args, s.path, s.clock, strings.NewReader(s.in), &out, s.follow)
 	return out.String(), err
 }
 

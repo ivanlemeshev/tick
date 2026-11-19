@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,7 +18,7 @@ func TestConcurrentStartsKeepEverySession(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range n {
 		wg.Go(func() {
-			if err := run([]string{"start", fmt.Sprint("p", i)}, path, time.Now, io.Discard, nil); err != nil {
+			if err := run([]string{"start", fmt.Sprint("p", i)}, path, time.Now, strings.NewReader(""), io.Discard, nil); err != nil {
 				t.Error(err)
 			}
 		})
