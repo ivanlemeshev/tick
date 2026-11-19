@@ -63,7 +63,7 @@ func StopSession(s State, a Active, now time.Time) (State, *Entry) {
 	return Stop(s, now)
 }
 
-// Heartbeat is what a running timer view last reported about itself.
+// Heartbeat is the last report of a running timer view about itself.
 type Heartbeat struct {
 	Session Active    `json:"session"`
 	PID     int       `json:"pid"`
@@ -205,8 +205,8 @@ func summarize(pieces []piece) Summary {
 	return sum
 }
 
-// Remove deletes every finished entry of p and returns them.
-// It refuses while p is active, so a running timer never loses its project.
+// Remove returns s without the entries of p, and the entries it removed.
+// It fails while p is active, so a running timer never loses its project.
 func Remove(s State, p Project) (next State, removed []Entry, err error) {
 	if s.Active != nil && s.Active.Project == p {
 		return s, nil, fmt.Errorf("stop %s before removing it", p)

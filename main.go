@@ -2,8 +2,8 @@
 //
 //	tick start <project>   start tracking a project (switches if another is running)
 //	tick stop              stop the running project
-//	tick report            show total time per project
-//	tick remove <project>  delete all time of a project, after asking
+//	tick report            show time per project for each day and for all days
+//	tick remove <project>  delete all time of a project after you confirm
 //
 // Data lives in $TICK_FILE, or ~/.tick.json by default.
 package main
@@ -46,8 +46,8 @@ func dataPath() (string, error) {
 	return filepath.Join(home, ".tick.json"), nil
 }
 
-// run executes one command. remove reads its answer from in.
-// After start, follow (if not nil) is shown the active session.
+// run executes one command. remove reads the answer to its question from in.
+// After start, run gives the active session to follow, if follow is not nil.
 func run(args []string, path string, now func() time.Time, in io.Reader, out io.Writer, follow func(Active) error) error {
 	if len(args) == 0 {
 		return errUsage
@@ -90,8 +90,8 @@ func run(args []string, path string, now func() time.Time, in io.Reader, out io.
 	return errUsage
 }
 
-// remove shows what removing p deletes and deletes it only if the user
-// answers yes. If p changes while the question is open, nothing is removed.
+// remove shows the entries of p and asks the user to confirm. It deletes them
+// only on yes. If p changes while the question is open, it deletes nothing.
 func remove(path string, p Project, in io.Reader, out io.Writer) error {
 	s, err := load(path)
 	if err != nil {
@@ -128,7 +128,7 @@ func remove(path string, p Project, in io.Reader, out io.Writer) error {
 	return write(out, fmt.Sprintf("removed %s\n", p))
 }
 
-// describe says how many entries there are and how much time they hold.
+// describe gives the number of entries and their total time.
 func describe(es []Entry) string {
 	var total time.Duration
 	for _, e := range es {
@@ -142,7 +142,7 @@ func describe(es []Entry) string {
 }
 
 // confirmed reads one line from in and reports whether it is y or yes.
-// No input, as from a closed stdin, is no.
+// No input, for example from a closed stdin, is no.
 func confirmed(in io.Reader) bool {
 	line, _ := bufio.NewReader(in).ReadString('\n')
 	answer := strings.ToLower(strings.TrimSpace(line))
@@ -208,5 +208,5 @@ func writeSummary(b *strings.Builder, title string, s Summary) {
 	}
 }
 
-// human formats a duration for display, to the second.
+// human rounds a duration to the second for display.
 func human(d time.Duration) time.Duration { return d.Round(time.Second) }

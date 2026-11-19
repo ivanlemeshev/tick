@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Tag and push the next release: mise run release [patch|minor|major]
 #
-# The version lives only in git tags of the form vMAJOR.MINOR.PATCH. The next
-# version bumps the highest such tag (v0.0.0 if there is none). Releases are
-# made from main, from a clean tree, of the commit origin/main already has.
-# Running it again on a released commit pushes that tag and changes nothing else.
-# It always asks before tagging or pushing; anything but y or yes cancels,
-# and so does having no input to answer from.
+# The version is only in git tags of the form vMAJOR.MINOR.PATCH. The next
+# version increments the highest tag, or v0.0.0 if there is no tag. The script
+# releases only from main with a clean tree, when HEAD matches origin/main.
+# On a commit that has a release tag, it only pushes that tag.
+# It always asks before it tags or pushes. Any answer other than y or yes
+# cancels. No input also cancels.
 set -euo pipefail
 
 level=${1:-patch}

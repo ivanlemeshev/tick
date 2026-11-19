@@ -12,7 +12,7 @@ shellcheck = "0.11.0"
 tombi = "1.11.2"
 
 [tasks.format]
-description = "Format Go, Markdown, YAML, TOML, and Bash files."
+description = "Format Go, Markdown, YAML, TOML and Bash files."
 quiet = true
 output = "interleave"
 run = '''
@@ -38,7 +38,7 @@ bash scripts/run-step.sh 'Checking TOML formatting' tombi format --check
 '''
 
 [tasks.lint]
-description = "Check Go, Markdown, TOML, and Bash files."
+description = "Check Go, Markdown, TOML and Bash files."
 quiet = true
 output = "interleave"
 run = '''
@@ -54,11 +54,11 @@ description = "Run all tests with the race detector and print coverage"
 run = "go test -race -cover ./..."
 
 [tasks.build]
-description = "Check that the binary builds, without keeping it"
+description = "Check that the binary builds and keep no binary"
 run = "go build -o /dev/null ./..."
 
 [tasks.check]
-description = "Run format, lint, test, and build checks."
+description = "Run the format, lint, test and build checks."
 quiet = true
 depends = [{ task = "format:check" }, { task = "lint" }, { task = "test" }, { task = "build" }]
 run = "true"
@@ -72,5 +72,5 @@ description = "Validate the GoReleaser config and build all release archives loc
 run = [
   "goreleaser check",
   "goreleaser release --snapshot --clean",
-  "rm -rf dist",  # only checking that it builds; keep no artifacts
+  "rm -rf dist",  # only check that it builds; keep no artifacts
 ]
